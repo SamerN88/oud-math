@@ -1,0 +1,11 @@
+.*
+!.gitignore
+
+__pycache__/
+venv/
+example-specs/
+SANDBOX/
+
+assets/img/*
+!assets/img/oud-face.png
+!assets/img/oud_profile.png

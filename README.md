@@ -1,1 +1,4 @@
-# Oud Math<br>### by Samer N. Najjar
+# Oud Math
+###### Samer N. Najjar
+
+<hr>
