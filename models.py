@@ -258,16 +258,18 @@ class GeneralizedGDModel(OudBowlProfileModel):
 
     @classmethod
     def slim_preset(cls, *, H=500, Z=60):
+        # width = 340 mm (with default args)
         return cls(
             H=H,
             Z=Z,
             alpha=0.456,
             beta=0.916,
-            k=0.858
+            k=0.845
         )
 
     @classmethod
     def medium_preset(cls, *, H=500, Z=60):
+        # width = 370 mm (with default args)
         return cls(
             H=H,
             Z=Z,
@@ -278,6 +280,7 @@ class GeneralizedGDModel(OudBowlProfileModel):
 
     @classmethod
     def wide_preset(cls, *, H=500, Z=60):
+        # width = 395 mm (with default args)
         return cls(
             H=H,
             Z=Z,
