@@ -7,5 +7,5 @@ example-specs/
 SANDBOX/
 
 assets/img/*
-!assets/img/oud-face.png
+!assets/img/oud_face.png
 !assets/img/oud_profile.png

@@ -257,14 +257,33 @@ class GeneralizedGDModel(OudBowlProfileModel):
             + Z / (2*H)
 
     @classmethod
-    def standard_preset_6course(cls):
-        # TODO: finalize standard presets
+    def slim_preset(cls, *, H=500, Z=60):
         return cls(
-            H=500,
-            Z=60,
+            H=H,
+            Z=Z,
+            alpha=0.456,
+            beta=0.916,
+            k=0.858
+        )
+
+    @classmethod
+    def medium_preset(cls, *, H=500, Z=60):
+        return cls(
+            H=H,
+            Z=Z,
             alpha=0.421,
             beta=0.935,
             k=0.887
+        )
+
+    @classmethod
+    def wide_preset(cls, *, H=500, Z=60):
+        return cls(
+            H=H,
+            Z=Z,
+            alpha=0.427,
+            beta=0.853,
+            k=0.885
         )
 
 

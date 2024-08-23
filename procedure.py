@@ -177,7 +177,7 @@ class RibProcedure:
 
         # Generate first page, which is the specs page (model graph, dimensions, etc.)
         self.print(f'    creating page 1/{num_pages + 1}')
-        self.oud_specs.make_specs_page(pdf)
+        self.oud_specs.add_specs_page(pdf)
 
         # Iterate over pages and draw a segment of the rib on each page until the entire rib has been drawn
         for page_idx in range(num_pages):
@@ -310,7 +310,7 @@ class OudSpecs:
 
         self._pdf_util = PDFUtil()
 
-    def make_specs_page(self, pdf):
+    def add_specs_page(self, pdf):
         # Set PDF config for this page
         self._pdf_util.apply_default_pdf_config(pdf)
 
@@ -321,9 +321,9 @@ class OudSpecs:
         # Create new page
         pdf.showPage()
 
-    def make_new_specs_pdf(self, output_pdf_path):
+    def make_specs_pdf(self, output_pdf_path):
         pdf = self._pdf_util.initialize_canvas(output_pdf_path)
-        self.make_specs_page(pdf)
+        self.add_specs_page(pdf)
         pdf.save()
 
     def _draw_specs__header_and_footer(self, pdf):

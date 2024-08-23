@@ -153,14 +153,14 @@ def main():
     # model = BezierModel([(x, 0.5) for x in np.linspace(0, 1, 3)], H=500, Z=60)
     # density = 6
 
-    selector = PointSelector('assets/img/oud-profile.png', H=model.H, Z=model.Z)
+    selector = PointSelector('assets/img/oud_profile.png', H=model.H, Z=model.Z)
     points = selector.run()
 
     optimizer = Optimizer(model, points)
     optimizer.run(density, epochs=3, animate=True)
 
     specs = OudSpecs(model)
-    specs.make_new_specs_pdf('TEMP.pdf')
+    specs.make_specs_pdf('oud_specs.pdf')
 
 
 if __name__ == '__main__':
