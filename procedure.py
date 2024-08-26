@@ -259,7 +259,8 @@ class RibMath:
 
     # Width of rib with respect to long axis of oud
     def w(self, x):
-        return 2 * self.model(x) * math.sin(math.pi / (2 * self.n))
+        # 2r * tan(pi / 2n) gives us the "exterior chord", which is the true width of wood needed for the rib
+        return 2 * self.model(x) * math.tan(math.pi / (2 * self.n))
 
     # Inverse arc length
     def l_inv(self, l):

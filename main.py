@@ -54,6 +54,7 @@ def test_all(num_ribs, plot=False):
 
 
 def main():
+    # TODO: consider how to allow users to perform different functions via Terminal
     # TODO: For publishing, maybe rename this function and file to "sandbox"? Not sure. Think about it.
     num_ribs = 17
 
