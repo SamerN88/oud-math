@@ -13,6 +13,8 @@ class Optimizer:
         self.model = model
         self.points = np.array(points, copy=True)
 
+        # TODO: consider adding config for all the models already defined in models.py, and then add a method so
+        #       users can submit config for a new model they may create
         CONFIG_GETTERS = {
             GeneralizedGDModel: self._get_config__GeneralizedGDModel,
             BezierModel: self._get_config__BezierModel,
@@ -169,11 +171,12 @@ class Optimizer:
 
     def _print_results(self, best_params, best_mae):
         model = self.model
+        col_width = max(map(len, model.PARAM_NAMES))
         print()
         print('_' * 75)
         print('RESULTS')
         print()
-        print(*(f'{name.ljust(max(len(pn) for pn in model.PARAM_NAMES))} = {value}' for name, value in best_params.items()), sep='\n')
+        print(*(f'{name.ljust(col_width)} = {value}' for name, value in best_params.items()), sep='\n')
         print()
         print(model)
         print('MAE:', best_mae, 'mm')
