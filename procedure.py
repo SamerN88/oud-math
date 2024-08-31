@@ -441,15 +441,6 @@ class OudSpecs:
             height=neck_thickness_bracket_height,
             direction='right'
         )
-
-        # Draw neck thickness dashed line
-        pdf.setDash(*dash_config)
-        pdf.line(
-            x_offset + graph_width_pt,
-            y_offset,
-            x_offset + graph_width_pt,
-            y_offset + neck_thickness_bracket_height
-        )
         pdf.restoreState()
 
         # Annotate neck thickness
