@@ -68,6 +68,10 @@ class RibProcedure:
         self.print(f'Total runtime: {stopwatch.total_elapsed():.3f} s')
         self.print()
 
+    def build_resources(self):
+        self._build_x_distribution()
+        self._build_l_inv_table()
+
     # Data creation ----------------------------------------------------------------------------------------------------
 
     def _build_x_distribution(self):
