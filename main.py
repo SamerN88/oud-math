@@ -1,7 +1,7 @@
 import os
 
 from models import BezierModel, GeneralizedGDModel, GrowthDecayModel, StaticModel
-from procedure import RibProcedure
+from procedure import RibGenerator
 
 
 # Oud dimensions in mm
@@ -48,9 +48,9 @@ def test_all(num_ribs, plot=False):
     for model in MODELS:
         if plot:
             model.plot()
-        procedure = RibProcedure(model, num_ribs, multiprocessing=True, verbose=True)
-        procedure.run(RIB_PDF_PATHS[model.__class__.__name__])
-        procedure.print()
+        ribgen = RibGenerator(model, num_ribs, verbose=True)
+        ribgen.run(RIB_PDF_PATHS[model.__class__.__name__])
+        ribgen.print()
 
 
 def main():
@@ -59,8 +59,9 @@ def main():
     num_ribs = 17
 
     model = GeneralizedGDModel(H=500, Z=60, alpha=0.4631684, beta=0.9221139, k=1.03458806)
-    procedure = RibProcedure(model, num_ribs, multiprocessing=True, verbose=True)
-    procedure.run(os.path.join(RIB_PDF_DIR, 'test.pdf'))
+
+    ribgen = RibGenerator(model, num_ribs, verbose=True)
+    ribgen.run(os.path.join(RIB_PDF_DIR, 'test.pdf'))
 
     # test_all(num_ribs, plot=False)
 

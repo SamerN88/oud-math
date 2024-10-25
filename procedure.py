@@ -1,162 +1,54 @@
 import math
-import os
 import textwrap
-from concurrent.futures import as_completed, ProcessPoolExecutor
 from datetime import datetime
 
 import numpy as np
-from scipy.integrate import quad
 
 from util import PDFUtil, Stopwatch, Style
 
 
-class RibProcedure:
-    def __init__(self, model, num_ribs, *, multiprocessing=True, verbose=False):
+class RibGenerator:
+    def __init__(self, model, num_ribs, *, verbose=False):
         self.model = model
         self.num_ribs = num_ribs
-        self.math = RibMath(model, num_ribs)
 
-        # Runtime config
-        self.multiprocessing = multiprocessing
-        self.verbose = verbose
-        self.print = print if verbose else (lambda *_, **__: None)
-
-        # Data required in the future
-        self.x_distribution = None
+        # RibMath object, which contains all the core mathematical functionality to accurately generate the rib
+        self.math = RibMath(self.model, self.num_ribs)
 
         # Specs object for the model being used
         self.oud_specs = OudSpecs(model)
+
+        # Verbose config
+        self.verbose = bool(verbose)
+        self.print = print if verbose else (lambda *_, **__: None)
 
         # PDF config and utility functions
         self._pdf_util = PDFUtil()
 
     # Entry point
     def run(self, output_pdf_path):
-        self.print('_' * 75)
-        self.print(Style('Running rib procedure\n').bold().cyan())
+        # [Verbose] Display model, number of ribs, and rib length
+        self.print()
+        self.print('-' * 75)
+        self.print(Style('Running Rib Generator').bold().cyan(), Style(f'[verbose = {self.verbose}]').gray() + '\n')
         self.print(f'model = {self.model}')
         self.print(f'num_ribs = {self.num_ribs}')
         self.print()
-        self.print(Style(f'multiprocessing = {self.multiprocessing}').light_gray())
-        self.print(Style(f'verbose = {self.verbose}').light_gray())
-        self.print('_' * 75)
-        self.print()
+        self.print('Rib Length:', Style(f'{self.math.l(self.model.H):.1f} mm').blue())
 
         stopwatch = Stopwatch()
         stopwatch.start()
 
-        # Setup
-
-        if self.x_distribution is None:
-            self._build_x_distribution()
-
-        if self.math.l_inv_table_sorted is None:
-            stopwatch.lap()
-            self._build_l_inv_table()
-            self.print(f'[{stopwatch.lap():.3f} s]')
-        else:
-            self.print(Style(f'Using cached inverse arc length table [size: {len(self.math.l_inv_table_sorted)}]').italics().gray())
-
-        self.print()
-
-        # Draw rib to scale in a PDF
-        stopwatch.lap()
+        # Generate rib template PDF
         self._make_rib_template_pdf(output_pdf_path)
-        self.print(f'[{stopwatch.lap():.3f} s]')
 
+        # [Verbose] Display output PDF path and runtime
         self.print(f'\nDone. See file {Style(output_pdf_path).bold().green()}')
-        self.print(f'Total runtime: {stopwatch.total_elapsed():.3f} s')
+        self.print(f'Runtime: {stopwatch.total_elapsed():.3f} s')
+        self.print('-' * 75)
         self.print()
-
-    def build_resources(self):
-        self._build_x_distribution()
-        self._build_l_inv_table()
-
-    # Data creation ----------------------------------------------------------------------------------------------------
-
-    def _build_x_distribution(self):
-        H = self.model.H
-        init_delta = 1e-12
-
-        # Define slope thresholds and their respective interval masses
-        slope_mass_pairs = [
-            (1000000, 10000),
-            (100, 1000),
-        ]
-        max_mass = slope_mass_pairs[0][1]
-
-        # Initialize start and end distributions
-        x_distributions = [
-            np.linspace(0, init_delta, max_mass),
-            np.linspace(H - init_delta, H, max_mass)
-        ]
-
-        # Generate dense distribution around start
-        delta = init_delta
-        for slope, mass in slope_mass_pairs:
-            while abs(self.model.derivative(delta)) > slope:
-                x_distributions.append(np.linspace(delta, delta * 10, mass))
-                delta *= 10
-        start = delta
-
-        # Generate dense distribution around end
-        delta = init_delta
-        for slope, mass in slope_mass_pairs:
-            while abs(self.model.derivative(H - delta)) > slope:
-                x_distributions.append(np.linspace(H - delta * 10, H - delta, mass))
-                delta *= 10
-        end = H - delta
-
-        # Generate sparse distribution in middle section
-        x_distributions.append(np.linspace(start, end, max_mass))
-
-        self.x_distribution = np.unique(np.concatenate(x_distributions))  # np.unique() sorts too
-
-    def _build_l_inv_table(self):
-        self.print(Style(f'Building inverse arc length table [size: ~{len(self.x_distribution)}]').blue())
-
-        # Setup logging
-        checkpoint = step_size = 10  # percent completion per log message
-
-        def log_progress(num_points):
-            nonlocal checkpoint
-            completion_percent = num_points / len(self.x_distribution) * 100
-            if completion_percent >= checkpoint:
-                self.print(f'   {num_points} point{"" if num_points == 1 else "s"} generated [{round(completion_percent)}%]')
-                checkpoint += step_size
-
-        l_inv_table = {}
-
-        if self.multiprocessing:
-            num_cores = os.cpu_count() or 4
-            self.print(Style(f'(using multiprocessing with {num_cores} cores)').light_gray())
-
-            # Split x distribution into as many chunks as there are CPU cores (if it's sufficiently large)
-            if len(self.x_distribution) > 100:
-                x_chunks = [self.x_distribution[i::num_cores] for i in range(num_cores)]
-            else:
-                x_chunks = [self.x_distribution]
-
-            with ProcessPoolExecutor(max_workers=num_cores) as executor:
-                # Submit all jobs and get a list of Future objects
-                futures = [executor.submit(self.math.compute_l_inv_table_entries, x_chunk) for x_chunk in x_chunks]
-
-                self.print('Running processes in parallel...')
-                for future in as_completed(futures):
-                    l_inv_table.update(future.result())
-                    log_progress(len(l_inv_table))
-        else:
-            for x in self.x_distribution:
-                l_inv_table[self.math.l(x)] = x
-                log_progress(len(l_inv_table))
-
-        self.math.set_l_inv_table_sorted(l_inv_table)
-
-    # PDF creation -----------------------------------------------------------------------------------------------------
 
     def _make_rib_template_pdf(self, output_pdf_path):
-        self.print(Style(f'Drawing rib on PDF [output path: {output_pdf_path}]').blue())
-
         # Get PDF config
         page_width = self._pdf_util.page_width
         page_height = self._pdf_util.page_height
@@ -166,27 +58,37 @@ class RibProcedure:
         rib_length_mm = self.math.l(self.model.H)
         rib_length_pt = self._pdf_util.mm_to_pt(rib_length_mm)
 
-        self.print(Style(f'rib length: {rib_length_mm:.1f} mm ({rib_length_pt:.1f} pt)').light_gray())
+        # Generate all rib points (pt); we use `c` to denote an arc length, to keep the notation consistent
+        c_pt = np.arange(0, int(rib_length_pt) + 1)  # granularity is 1 pt
+        half_rib_widths_pt = self._pdf_util.mm_to_pt(self.math.w_c(self._pdf_util.pt_to_mm(c_pt)) / 2)
 
         # Define box in which to draw each rib segment on each page
         box_origin = (margin, margin)
         box_width = page_width - 2 * margin
         box_height = page_height - 2 * margin
 
-        # Number of pages needed for the rib template, i.e. excludes the first page (specs page)
-        num_pages = round(rib_length_pt // box_height + 1)
+        # Break apart the points array into segments, one segment per page
+        seg_size = box_height + 1
+        segments = [half_rib_widths_pt[i: i + seg_size] for i in range(0, len(half_rib_widths_pt), seg_size)]
+        if len(segments[-1]) == 1:
+            # If the last segment has just a single point, then that single point will be covered by the box border,
+            # leaving the last page of the PDF blank. So, we can just remove that point and eliminate the blank page.
+            segments.pop()
+
+        # Number of pages needed for the rib template (excluding the specs page)
+        num_pages = len(segments)
 
         # Create a PDF with ReportLab
         pdf = self._pdf_util.initialize_canvas(output_pdf_path)
 
         # Generate first page, which is the specs page (model graph, dimensions, etc.)
-        self.print(f'    creating page 1/{num_pages + 1}')
         self.oud_specs.add_specs_page(pdf)
 
         # Iterate over pages and draw a segment of the rib on each page until the entire rib has been drawn
+        x_mid = page_width / 2
+        box_top = page_height - margin
         for page_idx in range(num_pages):
             page_num = page_idx + 1
-            self.print(f'    creating page {page_num + 1}/{num_pages + 1}')  # accounts for specs page
 
             # Set PDF config for each page
             self._pdf_util.apply_default_pdf_config(pdf)
@@ -194,46 +96,33 @@ class RibProcedure:
             # Draw box on page
             pdf.rect(*box_origin, box_width, box_height)
 
-            # Write the total number of ribs needed for the given specs
+            # Write the number of ribs needed for the given specs
             pdf.drawCentredString(
                 page_width / 2,
                 page_height - (margin / 2) - text_line_height,
-                f'Total number of ribs: {self.num_ribs}'
+                f'Number of ribs: {self.num_ribs}'
             )
 
             # Write page number (specs page is not numbered, so we start numbering rib pages from 1)
             pdf.drawCentredString(page_width / 2, margin / 2, str(page_num))
 
-            # Generate points for rib segment
-            start_x = page_idx * box_height
-            points = []
-            for x in range(start_x, start_x + box_height + 1):  # step by 1 pt
-                if x > rib_length_pt:
-                    break
-
-                x_mm = self._pdf_util.pt_to_mm(x)
-                half_rib_width = 0.5 * self.math.omega(x_mm)
-                y = self._pdf_util.mm_to_pt(half_rib_width)
-
-                points.append((x, y))
-
             # Draw rib segment
-            x_mid = page_width / 2
-            box_top = page_height - margin
-            for i in range(len(points) - 1):
-                x1, y1 = points[i]
-                x2, y2 = points[i + 1]
+            segment = segments[page_idx]
+            for c in range(len(segment) - 1):  # we move 1 pt at a time, since the points granularity is 1 pt
+                # hw = "half width"
+                hw1 = segment[c]
+                hw2 = segment[c + 1]
 
                 # Convert the Cartesian coordinates to points on the PDF page (both left and right points).
                 # Note that the rib is symmetric along its long axis.
 
-                page_right_x1 = x_mid + y1
-                page_left_x1 = x_mid - y1
-                page_y1 = box_top - i
+                page_right_x1 = x_mid + hw1
+                page_left_x1 = x_mid - hw1
+                page_y1 = box_top - c
 
-                page_right_x2 = x_mid + y2
-                page_left_x2 = x_mid - y2
-                page_y2 = box_top - (i + 1)
+                page_right_x2 = x_mid + hw2
+                page_left_x2 = x_mid - hw2
+                page_y2 = box_top - (c + 1)
 
                 # Draw both the right and left segments
                 pdf.line(page_right_x1, page_y1, page_right_x2, page_y2)
@@ -250,41 +139,53 @@ class RibProcedure:
 
 
 class RibMath:
-    def __init__(self, model, n, l_inv_table_sorted=None):
-        self.model = model  # oud bowl profile function
-        self.n = n  # number of ribs desired
-        self.l_inv_table_sorted = l_inv_table_sorted  # sorted inverse arc length table (normally generated later)
+    def __init__(self, model, num_ribs):
+        self.model = model  # oud bowl profile function (radius function)
+        self.n = num_ribs  # number of ribs desired
 
-    # Arc length of bowl with respect to long axis of oud
+        # Generate x distribution which will be used to generate tables
+        #   - Resolution: 100 points per mm, capped at 1 million total points for performance (realistically should
+        #     never reach 1 million points, unless oud soundboard is 10 meters long)
+        resolution = min(math.ceil(self.model.H * 100), 1000000)
+        x_distribution = np.linspace(0, self.model.H, resolution)
+
+        # Generate arc length table and (arc length -> width) table
+
+        x1 = x_distribution[:-1]
+        x2 = x_distribution[1:]
+
+        r1 = self.r(x1)
+        r2 = self.r(x2)
+
+        euclidean_distances = np.sqrt((x2 - x1) ** 2 + (r2 - r1) ** 2)
+
+        arc_lengths = np.concatenate([[0], np.cumsum(euclidean_distances)])  # manually insert zero arc length at x=0
+        widths = self.w_x(x_distribution)
+
+        # Create tables
+        self.l_table = np.column_stack([x_distribution, arc_lengths])
+        self.l_w_table = np.column_stack([arc_lengths, widths])
+
+    # Radius of bowl with respect to soundboard's long axis; simply the model's radius function
+    def r(self, x):
+        return self.model(x)
+
+    # Arc length with respect to soundboard's long axis
     def l(self, x):
-        integrand = lambda t: math.sqrt(1 + self.model.derivative(t) ** 2)
-        # Alert on error greater than 0.1 mm
-        return quad(integrand, 0, x, epsabs=0.1)[0]
+        return np.interp(x, self.l_table[:, 0], self.l_table[:, 1])
 
-    # Width of rib with respect to long axis of oud
-    def w(self, x):
+    # Width of rib with respect to soundboard's long axis
+    def w_x(self, x):
         # 2r * tan(pi / 2n) gives us the "exterior chord", which is the true width of wood needed for the rib
-        return 2 * self.model(x) * math.tan(math.pi / (2 * self.n))
+        return 2 * self.r(x) * math.tan(math.pi / (2 * self.n))
 
     # Inverse arc length
-    def l_inv(self, l):
-        if self.l_inv_table_sorted is None:
-            raise ValueError('`l_inv_table_sorted` must be set before calling `l_inv` (use `set_l_inv_table_sorted()`)')
-        return np.interp(l, self.l_inv_table_sorted[:, 0], self.l_inv_table_sorted[:, 1])
+    def l_inv(self, c):
+        return np.interp(c, self.l_table[:, 1], self.l_table[:, 0])
 
-    # Width of rib with respect to bowl arc length
-    def omega(self, l):
-        return self.w(self.l_inv(l))
-
-    def compute_l_inv_table_entries(self, x_values):
-        return {self.l(x): x for x in x_values}
-
-    def set_l_inv_table_sorted(self, l_inv_table):
-        if isinstance(l_inv_table, dict):
-            l_inv_table = list(l_inv_table.items())
-        l_inv_table = np.array(l_inv_table)
-        l_inv_table_sorted = l_inv_table[l_inv_table[:, 0].argsort()]
-        self.l_inv_table_sorted = l_inv_table_sorted
+    # Width of rib with respect to arc length
+    def w_c(self, c):
+        return np.interp(c, self.l_w_table[:, 0], self.l_w_table[:, 1])
 
 
 class OudSpecs:
@@ -304,9 +205,13 @@ class OudSpecs:
         y = model(x)
         points = np.column_stack((x, y))
 
+        # Add neck joint point to guarantee its existence in extreme bowl curves
+        neck_joint_point = np.array([self.soundboard_length, self.neck_thickness])
+        points = np.vstack((points, neck_joint_point))
+
         # Add the neck point to the points (the farthest point up on the neck, where the nut is)
         neck_point = np.array([self.full_length, self.neck_thickness])
-        points = np.row_stack((points, neck_point))
+        points = np.vstack((points, neck_point))
         self._profile_points = points
 
         # Set specs (part 2/2)
@@ -319,7 +224,7 @@ class OudSpecs:
         # Set PDF config for this page
         self._pdf_util.apply_default_pdf_config(pdf)
 
-        self._draw_specs__header_and_footer(pdf)  # draw header and footer
+        self._draw_specs__header(pdf)  # draw header and footer
         self._draw_specs__profile_graph(pdf)  # draw graph of the oud profile
         self._draw_specs__face_diagram(pdf)  # draw diagram of the oud face
 
@@ -331,7 +236,7 @@ class OudSpecs:
         self.add_specs_page(pdf)
         pdf.save()
 
-    def _draw_specs__header_and_footer(self, pdf):
+    def _draw_specs__header(self, pdf):
         page_width = self._pdf_util.page_width
         page_height = self._pdf_util.page_height
         margin = self._pdf_util.margin
@@ -343,7 +248,7 @@ class OudSpecs:
         tab = ' ' * 4
 
         # Write date
-        date = datetime.now().strftime("%d %b %Y")
+        date = datetime.now().strftime("%-d %b %Y")
         date_width = pdf.stringWidth(date, font_name, font_size)
         pdf.drawString(page_width - date_width - (margin / 2), page_height - (margin / 2), date)
 
@@ -401,7 +306,7 @@ class OudSpecs:
 
         # Draw graph axes
         pdf.line(x_offset, y_offset, x_offset + graph_width_pt, y_offset)  # x-axis
-        pdf.line(x_offset, y_offset, x_offset, y_offset + max_depth_pt + 40)  # y-axis
+        # pdf.line(x_offset, y_offset, x_offset, y_offset + max_depth_pt + 40)  # y-axis
 
         # Draw model graph (profile of oud)
         for i in range(len(points_graph) - 1):

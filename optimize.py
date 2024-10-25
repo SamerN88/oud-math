@@ -13,8 +13,8 @@ class Optimizer:
         self.model = model
         self.points = np.array(points, copy=True)
 
-        # TODO: consider adding config for all the models already defined in models.py, and then add a method so
-        #       users can submit config for a new model they may create
+        # TODO: must replace this implementation with L-BFGS-B!!!
+
         CONFIG_GETTERS = {
             GeneralizedGDModel: self._get_config__GeneralizedGDModel,
             BezierModel: self._get_config__BezierModel,

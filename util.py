@@ -112,14 +112,19 @@ class Style:
         self.add_style('\033[37m')
         return self
 
+    def str(self):
+        return str(self)
+
     def __str__(self):
         # Apply all accumulated styles to the text
-        styled_text = ''.join(self.styles) + self.text + self.reset
-        return styled_text
+        return ''.join(self.styles) + self.text + self.reset
+
+    def __add__(self, other):
+        return str(self) + str(other)
 
 
 class PDFUtil:
-    _FONTS_DIR = 'assets'
+    _FONTS_DIR = os.path.join(os.path.dirname(__file__), 'assets')
 
     def __init__(self):
         # Define PDF config values

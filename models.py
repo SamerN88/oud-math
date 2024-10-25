@@ -11,7 +11,6 @@ from util import FixedDict
 
 # Abstract base class for all models
 class OudBowlProfileModel(ABC):
-    EPSILON = 1e-100  # we treat 0 as EPSILON to avoid bad behavior in some operations (e.g. derivative, integration)
     NECK_LENGTH = 200  # standard neck length in mm; this is fixed across virtually all standard ouds, +/- 5 mm
 
     def __init__(self, *, H, Z, **params):
@@ -34,11 +33,7 @@ class OudBowlProfileModel(ABC):
         pass
 
     @abstractmethod
-    def psi(self, x):
-        pass
-
-    @abstractmethod
-    def derivative(self, x):
+    def r(self, x):
         pass
 
     def get_param(self, name):
@@ -60,9 +55,9 @@ class OudBowlProfileModel(ABC):
             self.params[key] = value
         self._set_params_as_attributes()
 
-    def plot(self, *, points=None, neck=False, color='dodgerblue', show=True, save_to=None, ax=None, title=None):
+    def plot(self, *, points=None, neck=False, color='blue', show=True, save_as=None, ax=None, title=None):
         x = np.linspace(0, self.H, 100000)
-        y = self.psi(x)
+        y = self.r(x)
 
         neck_thickness = self.Z / 2
 
@@ -98,15 +93,15 @@ class OudBowlProfileModel(ABC):
         ax.grid(True)
 
         # Must save fig BEFORE showing, or else will save blank image
-        if save_to is not None:
-            plt.savefig(save_to, dpi=600)
+        if save_as is not None:
+            plt.savefig(save_as, dpi=600)
         if show:
             plt.show()
 
         return ax
 
     def __call__(self, x):
-        return self.psi(x)
+        return self.r(x)
 
     def __repr__(self):
         params_str = ''.join(f', {name}={value}' for name, value in self.params.items())
@@ -122,7 +117,7 @@ class OudBowlProfileModel(ABC):
 
     def _check_num_params(self, num_params):
         if num_params != len(self.PARAM_NAMES):
-            raise ValueError(f'unexpected number of params; expected {len(self.params)}, got {num_params}')
+            raise ValueError(f'unexpected number of params; expected {len(self.PARAM_NAMES)}, got {num_params}')
 
     def _check_param_names(self, *names):
         truth_set = set(self.PARAM_NAMES)
@@ -132,23 +127,6 @@ class OudBowlProfileModel(ABC):
                     raise ValueError(f'unexpected param name; expected "{self.PARAM_NAMES[0]}", got "{name}"')
                 else:
                     raise ValueError(f'unexpected param name; expected one of {self.PARAM_NAMES}, got "{name}"')
-
-    def _sanitize_singularities(self, singularities):
-        H = self.H
-        EPSILON = OudBowlProfileModel.EPSILON
-
-        # Modifies in-place
-        # NumPy array-friendly
-        if isinstance(singularities[0], np.ndarray):
-            for s in singularities:
-                s[s == 0] = EPSILON
-                s[s == H] = H - EPSILON
-        else:
-            for i in range(len(singularities)):
-                if singularities[i] == 0:
-                    singularities[i] = EPSILON
-                elif singularities[i] == H:
-                    singularities[i] = H - EPSILON
 
     # Optionally used by subclasses if desired, e.g. for arbitrary param count
     def _set_params_as_attributes(self):
@@ -165,22 +143,10 @@ class StaticModel(OudBowlProfileModel):
     def PARAM_NAMES(self):
         return tuple()
 
-    def psi(self, x):
+    def r(self, x):
         H = self.H
         Z = self.Z
         return H * (np.sqrt(x/H) - 2**(x/H) + 1) + (Z / (2*H))*x
-
-    def derivative(self, x, sanitize_singularities=True):
-        H = self.H
-        Z = self.Z
-
-        singularities = [x/H]
-        if sanitize_singularities:
-            self._sanitize_singularities(singularities)
-
-        s = singularities[0]
-
-        return 1/(2*np.sqrt(s)) - 2**(x/H)*math.log(2) + Z/(2*H)
 
 
 class GrowthDecayModel(OudBowlProfileModel):
@@ -192,24 +158,11 @@ class GrowthDecayModel(OudBowlProfileModel):
     def PARAM_NAMES(self):
         return ('alpha',)
 
-    def psi(self, x):
+    def r(self, x):
         H = self.H
         Z = self.Z
         alpha = self.alpha
         return H * ((x/H)**alpha - 2**(x/H) + 1) + (Z / (2*H))*x
-
-    def derivative(self, x, sanitize_singularities=True):
-        H = self.H
-        Z = self.Z
-        alpha = self.alpha
-
-        singularities = [x/H]
-        if sanitize_singularities:
-            self._sanitize_singularities(singularities)
-
-        s = singularities[0]
-
-        return alpha * s**(alpha-1) - (math.log(2) * 2**(x/H)) + Z/(2*H)
 
 
 class GeneralizedGDModel(OudBowlProfileModel):
@@ -228,33 +181,13 @@ class GeneralizedGDModel(OudBowlProfileModel):
     def PARAM_NAMES(self):
         return ('alpha', 'beta', 'k')
 
-    def psi(self, x):
+    def r(self, x):
         H = self.H
         Z = self.Z
         alpha = self.alpha
         beta = self.beta
         k = self.k
         return H*k * ((x/H)**alpha - 2**(x/H) + 1)**beta + (Z / (2*H))*x
-
-    def derivative(self, x, sanitize_singularities=True):
-        H = self.H
-        Z = self.Z
-        alpha = self.alpha
-        beta = self.beta
-        k = self.k
-
-        singularities = [
-            (x/H)**alpha - 2**(x/H) + 1,
-            x/H
-        ]
-        if sanitize_singularities:
-            self._sanitize_singularities(singularities)
-
-        s1, s2 = singularities
-
-        return k * beta * s1**(beta - 1)  \
-            * (alpha * s2**(alpha-1) - (math.log(2) * 2**(x/H)))  \
-            + Z / (2*H)
 
     @classmethod
     def slim_preset(cls, *, H=500, Z=60):
@@ -340,11 +273,8 @@ class BezierModel(OudBowlProfileModel):
     def PARAM_NAMES(self):
         return self._dynamic_param_names
 
-    def psi(self, x):
+    def r(self, x):
         return self._spline(x)
-
-    def derivative(self, x):
-        return self._spline_derivative(x)
 
     def bezier_x(self, t):
         return self._bezier(t, 0)
@@ -364,14 +294,14 @@ class BezierModel(OudBowlProfileModel):
         spline_y_test = self._spline(bezier_x_test)
 
         # Calculate error metrics between the real Bezier curve and the cubic spline
-        diff = spline_y_test - bezier_y_test
-        mse = np.mean(diff ** 2)
-        avg_diff = np.mean(np.abs(diff))
-        max_diff = np.max(np.abs(diff))
-        x_argmax_diff = bezier_x_test[np.argmax(np.abs(diff))]
+        abs_error = np.abs(spline_y_test - bezier_y_test)
+        mse = np.mean(abs_error ** 2)
+        mae = np.mean(abs_error)
+        max_abs_error = np.max(abs_error)
+        x_argmax_error = bezier_x_test[np.argmax(abs_error)]
         print(f'MSE         = {mse}')
-        print(f'avg y diff  = {avg_diff}')
-        print(f'max y diff  = {max_diff} [x = {x_argmax_diff}]')
+        print(f'MAE         = {mae}')
+        print(f'max error   = {max_abs_error} [x = {x_argmax_error}]')
 
         if visualize:
             # Plot the real Bezier curve and the cubic spline approximation
@@ -394,28 +324,20 @@ class BezierModel(OudBowlProfileModel):
         self._update_state()
 
     def _update_state(self):
-        self._update_control_points()
-        self._compute_spline()
-
-    def _update_control_points(self):
-        inner_control_points = self._get_inner_control_points_from_params()
+        # Update control points
+        params = self.get_params()
+        inner_control_points = [(params[f'x{i}'], params[f'y{i}']) for i in range(1, self.degree)]
         self.control_points = np.array([
             self.first_control_point,
             *inner_control_points,
             self.last_control_point
         ])
 
-    def _compute_spline(self):
-        # Use higher point density in first 1% of curve since the oud has steepest slope there (2000 points total)
-        t_sample = np.concatenate([
-            np.linspace(0, 0.01, 1000),
-            np.linspace(0.01, 1, 1000)[1:]
-        ])
+        # Update spline
+        t_sample = np.linspace(0, 1, 2000)
         x_sample = self.bezier_x(t_sample)
         y_sample = self.bezier_y(t_sample)
-
         self._spline = CubicSpline(x_sample, y_sample)
-        self._spline_derivative = self._spline.derivative()
 
     def _bezier(self, t, dim):
         if dim not in {0, 1}:
@@ -429,10 +351,6 @@ class BezierModel(OudBowlProfileModel):
         # Scale the result by H to get the real scale (we do this OUTSIDE of defining control points so that control
         # point definition is normalized, irrespective of H and Z)
         return result * self.H
-
-    def _get_inner_control_points_from_params(self):
-        params = self.get_params()
-        return [(params[f'x{i}'], params[f'y{i}']) for i in range(1, len(params) // 2 + 1)]
 
     @staticmethod
     def _validate_coord_names(coord_names):
