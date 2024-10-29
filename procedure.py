@@ -7,6 +7,12 @@ import numpy as np
 from util import PDFUtil, Stopwatch, Style
 
 
+# TODO: Restructure project as follows:
+#       - create file rib.py containing RibGenerator and RibMath
+#       - create file bowl.py containing OudSpecs, PointsSelector (rename?), and Optimizer
+#       - the rest remains as is
+
+
 class RibGenerator:
     def __init__(self, model, num_ribs, *, verbose=False):
         self.model = model
