@@ -9,6 +9,12 @@ from scipy.interpolate import CubicSpline
 from util import FixedDict
 
 
+# TODO: Consider simplifying OudBowlProfileModel implementation as much as possible. Think about how a brand new user
+#       would feel trying to implement their own model; is it as intuitive and streamlined as possible?
+# TODO: Consider whether we should allow passing in nameless parameters; whatever you decide, do not add
+#       unnecessary complexity.
+
+
 # Abstract base class for all models
 class OudBowlProfileModel(ABC):
     NECK_LENGTH = 200  # standard neck length in mm; this is fixed across virtually all standard ouds, +/- 5 mm
@@ -17,6 +23,10 @@ class OudBowlProfileModel(ABC):
         self.H = H
         self.Z = Z
         self.params = FixedDict(params)
+
+        # Make sure PARAM_NAMES is implemented correctly
+        if not isinstance(self.PARAM_NAMES, tuple):
+            raise TypeError('property PARAM_NAMES must return a tuple of param names')
 
         self._check_class_properties()
         self._check_num_params(len(self.params))
@@ -65,32 +75,49 @@ class OudBowlProfileModel(ABC):
         if ax is None:
             _fig, ax = plt.subplots()
 
+        # Initialize x and y bounds (might be modified later if points were provided)
+        x_max = self.H + (self.NECK_LENGTH * neck)
+        y_max = max(max(y), neck_thickness) if neck else max(y)
+
         # Plot options (order matters)
+
         if points is not None:
             points = np.array(points)
-            ax.plot(points[:, 0], points[:, 1], '.', color='black')
+            x_pts, y_pts = points.T
+
+            # Modify x and y bounds if needed
+            x_max = max(x_max, max(x_pts))
+            y_max = max(y_max, max(y_pts))
+
+            ax.plot(x_pts, y_pts, '.', color='red', label='data points')
+
         if neck:
             ax.plot([self.H, self.H + self.NECK_LENGTH], [neck_thickness] * 2, color=color)
 
         # Plot model curve
-        ax.plot(x, y, color=color)
+        ax.plot(x, y, color=color, label='model curve')
 
-        # Set x bounds
-        x_max = 1.1 * (self.H + (self.NECK_LENGTH * neck))
+        # Add margins to x and y bounds
+        x_max *= 1.1
         x_min = -0.05 * x_max
-        ax.set_xlim(x_min, x_max)
+        y_max *= 1.5
 
-        # Set y bounds
-        y_max = 1.5 * (max(max(y), neck_thickness) if neck else max(y))
+        ax.set_xlim(x_min, x_max)
         ax.set_ylim(0, y_max)
 
         # Set extra settings and display graph
+
         if title is None:
             # Model representation (wrapped)
             title = textwrap.fill(str(self), width=60)
+
         ax.set_title(title, fontsize=10)
         ax.set_aspect('equal', adjustable='box')
         ax.grid(True)
+
+        # Add legend if points are provided
+        if points is not None:
+            ax.legend()
 
         # Must save fig BEFORE showing, or else will save blank image
         if save_as is not None:
