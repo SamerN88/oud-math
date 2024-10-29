@@ -3,7 +3,7 @@ import numpy as np
 import cv2
 from matplotlib.widgets import Button
 from models import GeneralizedGDModel, BezierModel, GrowthDecayModel
-from procedure import RibProcedure, OudSpecs
+from procedure import RibGenerator, OudSpecs
 from optimize import Optimizer
 
 # TODO: review this file
@@ -83,7 +83,7 @@ class PointSelector:
         self.style_plot()
 
     def style_plot(self):
-        self.ax.set_title('NOTE: Make sure to select the endpoints.')
+        self.ax.set_title('Draw the desired bowl profile (you may use sparse points).')
         self.ax.title.set_weight('bold')
         self.ax.set_xticks([])  # remove x-axis ticks
         self.ax.set_yticks([])  # remove y-axis ticks
@@ -148,19 +148,15 @@ def main():
     # Usage
 
     model = GeneralizedGDModel(H=500, Z=60, alpha=0.5, beta=1, k=1)
-    density = 50
-
-    # model = BezierModel([(x, 0.5) for x in np.linspace(0, 1, 3)], H=500, Z=60)
-    # density = 6
 
     selector = PointSelector('assets/img/oud_profile.png', H=model.H, Z=model.Z)
     points = selector.run()
 
-    optimizer = Optimizer(model, points)
-    optimizer.run(density, epochs=3, animate=True)
+    optimizer = Optimizer(model, param_bounds=[(0, 1), (0, 1), (0, 2)], verbose=True)
+    optimizer.fit(points)
 
-    specs = OudSpecs(model)
-    specs.make_specs_pdf('oud_specs.pdf')
+    ribgen = RibGenerator(model, 23)
+    ribgen.run('rib_template.pdf')
 
 
 if __name__ == '__main__':
